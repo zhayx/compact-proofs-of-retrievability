@@ -1,7 +1,7 @@
 /* 
 * cpor.h
 *
-* Copyright (c) 2008, Zachary N J Peterson <znpeters@nps.edu>
+* Copyright (c) 2010, Zachary N J Peterson <znpeters@nps.edu>
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -11,7 +11,7 @@
 *     * Redistributions in binary form must reproduce the above copyright
 *       notice, this list of conditions and the following disclaimer in the
 *       documentation and/or other materials provided with the distribution.
-*     * Neither the name of the <organization> nor the
+*     * Neither the name of the Naval Postgraduate School nor the
 *       names of its contributors may be used to endorse or promote products
 *       derived from this software without specific prior written permission.
 *
@@ -38,16 +38,23 @@
 #include <openssl/evp.h>
 #include <string.h>
 #include <limits.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/param.h>
+
+#define DEBUG
 
 #define CPOR_ZP_BITS 80 /* The size (in bits) of the prime that creates the field Z_p */
 
 #define CPOR_PRF_KEY_SIZE 20 /* Size (in bytes) of an HMAC-SHA1 */
-
-/* The sector size 1 byte smaller than the size of Zp so that it 
- * is guaranteed to be an element of the group Zp */
+#define CPOR_ENC_KEY_SIZE 32 /* Size (in bytes) of the user's AES encryption key */
+#define CPOR_MAC_KEY_SIZE 20 /* Size (in bytes) of the user's MAC key */
 
 #define CPOR_BLOCK_SIZE ((CPOR_ZP_BITS/8) - 1) /* Message block size in bytes */
 
+/* The sector size 1 byte smaller than the size of Zp so that it 
+ * is guaranteed to be an element of the group Zp */
 #define CPOR_SECTOR_SIZE ((CPOR_ZP_BITS/8) - 1) /* Message sector size in bytes */
 
 #define CPOR_NUM_SECTORS ( (CPOR_BLOCK_SIZE/CPOR_SECTOR_SIZE) + ((CPOR_BLOCK_SIZE % CPOR_SECTOR_SIZE) ? 1 : 0) ) /* Number of sectors per block */
@@ -64,7 +71,10 @@ typedef struct CPOR_key_struct CPOR_key;
 
 struct CPOR_key_struct{
 	unsigned char *k_enc;	/* The user's secret encryption key */
+	size_t k_enc_size;		/* Encryption size in bytes */
 	unsigned char *k_mac;	/* The user's secret MAC key */
+	size_t k_mac_size;		/* MAC key size in bytes */
+	CPOR_global *global;
 };
 
 typedef struct CPOR_tag_struct CPOR_tag;
@@ -74,6 +84,16 @@ struct CPOR_tag_struct{
 	unsigned int index;		/* The index for the authenticator, i */
 };
 
+typedef struct CPOR_t_struct CPOR_t;
+
+struct CPOR_t_struct{
+	
+	unsigned int n;			/* The number of blocks in the file */
+	unsigned char *k_prf;	/* The randomly generated PRF key for this file */
+	BIGNUM **alpha;
+};
+
+
 typedef struct CPOR_challenge_struct CPOR_challenge;
 
 struct CPOR_challenge_struct{
@@ -81,7 +101,7 @@ struct CPOR_challenge_struct{
 	unsigned int l;			/* The number of elements to be tested */
 	unsigned int *I;		/* An array of l indicies to be tested */
 	BIGNUM **nu;			/* An array of l random elements */
-	
+	CPOR_global *global;
 };
 
 typedef struct CPOR_proof_struct CPOR_proof;
@@ -91,6 +111,19 @@ struct CPOR_proof_struct{
 	BIGNUM **mu;
 };
 
+/* File-level CPOR functions from cpor-file.c */
+int cpor_tag_file(char *filepath, size_t filepath_len, char *tagfilepath, size_t tagfilepath_len, char *tfilepath, size_t tfilepath_len);
+
+CPOR_challenge *cpor_challenge_file(char *tfilepath, size_t tfilepath_len);
+
+CPOR_proof *cpor_prove_file(char *filepath, size_t filepath_len, char *tagfilepath, size_t tagfilepath_len, CPOR_challenge *challenge);
+
+int CPOR_verify_file(char *tfilepath, size_t tfilepath_len, CPOR_challenge *challenge, CPOR_proof *proof);
+
+/* Key management from cpor-keys.c */
+
+CPOR_key *cpor_create_new_keys();
+
 /* Core CPOR functions from cpor-core.c */
 CPOR_global *cpor_create_global(unsigned int bits);
 
@@ -98,15 +131,32 @@ CPOR_tag *cpor_tag_block(CPOR_global *global, unsigned char *k_prf, BIGNUM **alp
 
 CPOR_challenge *cpor_create_challenge(CPOR_global *global, unsigned int n);
 
-CPOR_proof *cpor_create_proof_update(CPOR_global *global, CPOR_challenge *challenge, CPOR_proof *proof, CPOR_tag *tag, unsigned char *block, size_t blocksize, unsigned int i);
+CPOR_proof *cpor_create_proof_update(CPOR_challenge *challenge, CPOR_proof *proof, CPOR_tag *tag, unsigned char *block, size_t blocksize, unsigned int index, unsigned int i);
 
-int cpor_verify_proof(CPOR_global *global, CPOR_proof *proof, CPOR_challenge *challenge, CPOR_tag *tag, unsigned char *k_prf, BIGNUM **alpha);
+CPOR_proof *cpor_create_proof_final(CPOR_proof *proof);
+
+int cpor_verify_proof(CPOR_global *global, CPOR_proof *proof, CPOR_challenge *challenge, unsigned char *k_prf, BIGNUM **alpha);
+
+/* Key functions from cpor-keys.c */
+CPOR_key *cpor_get_keys();
+
+void destroy_cpor_key(CPOR_key *key);
 
 /* Helper functions from cpor-misc.c */
 
 void sfree(void *ptr, size_t size);
 
 int get_rand_range(unsigned int min, unsigned int max, unsigned int *value);
+
+size_t get_ciphertext_size(size_t plaintext_len);
+
+size_t get_authenticator_size();
+
+int decrypt_and_verify_secrets(CPOR_key *key, unsigned char *input, size_t input_len, unsigned char *plaintext, size_t *plaintext_len, unsigned char *authenticator, size_t authenticator_len);
+
+int encrypt_and_authentucate_secrets(CPOR_key *key, unsigned char *input, size_t input_len, unsigned char *ciphertext, size_t *ciphertext_len, unsigned char *authenticator, size_t *authenticator_len);
+
+CPOR_t *cpor_create_t(CPOR_global *global, unsigned int n);
 
 BIGNUM *generate_prf_i(unsigned char *key, unsigned int index);
 
@@ -118,6 +168,9 @@ CPOR_challenge *allocate_cpor_challenge(unsigned int l);
 
 void destroy_cpor_tag(CPOR_tag *tag);
 CPOR_tag *allocate_cpor_tag();
+
+void destroy_cpor_t(CPOR_t *t);
+CPOR_t *allocate_cpor_t();
 
 void destroy_cpor_global(CPOR_global *global);
 CPOR_global *allocate_cpor_global();

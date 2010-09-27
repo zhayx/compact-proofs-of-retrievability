@@ -29,6 +29,16 @@
 
 #include "cpor.h"
 
+void printhex(unsigned char *ptr, size_t size){
+
+	size_t i = 0;
+	for(i = 0; i < size; i++){
+		printf("%02X", *ptr);
+		ptr++;
+	}
+	printf("\n");
+}
+
 void sfree(void *ptr, size_t size){ memset(ptr, 0, size); free(ptr); ptr = NULL;}
 
 int get_rand_range(unsigned int min, unsigned int max, unsigned int *value){
@@ -84,7 +94,143 @@ cleanup:
 	
 }
 
-int cpor_verify_key(CPOR_key *key){
+size_t get_ciphertext_size(size_t plaintext_len){
+
+	EVP_CIPHER_CTX ctx;
+	EVP_CIPHER_CTX_init(&ctx);
+	if(!EVP_EncryptInit(&ctx, EVP_aes_256_cbc(), NULL, NULL)) return 0;
+	return plaintext_len + EVP_CIPHER_CTX_block_size(&ctx);
+}
+
+size_t get_authenticator_size(){
+
+	return EVP_MAX_MD_SIZE;
+}
+
+int decrypt_and_verify_secrets(CPOR_key *key, unsigned char *input, size_t input_len, unsigned char *plaintext, size_t *plaintext_len, unsigned char *authenticator, size_t authenticator_len){
+
+	EVP_CIPHER_CTX ctx;
+	EVP_CIPHER *cipher = NULL;
+	unsigned char mac[EVP_MAX_MD_SIZE];
+	size_t mac_size = EVP_MAX_MD_SIZE;
+	int len;
+	
+	if(!key || !key->k_enc || !key->k_mac || !input || !input_len || !plaintext || !plaintext_len || !authenticator || !authenticator_len) return 0; 
+	
+	OpenSSL_add_all_algorithms();
+	memset(mac, 0, mac_size);
+	
+	/* Verify the HMAC-SHA1 */
+	if(!HMAC(EVP_sha1(), key->k_mac, key->k_mac_size, input, input_len, mac, (unsigned int *)&mac_size)) goto cleanup;
+	if(authenticator_len != mac_size) goto cleanup;
+	if(memcmp(mac, authenticator, mac_size) != 0) goto cleanup;
+	
+	
+	EVP_CIPHER_CTX_init(&ctx);
+	switch(key->k_enc_size){
+		case 16:
+			cipher = (EVP_CIPHER *)EVP_aes_128_cbc();
+			break;
+		case 24:
+			cipher = (EVP_CIPHER *)EVP_aes_192_cbc();
+			break;
+		case 32:
+			cipher = (EVP_CIPHER *)EVP_aes_256_cbc();
+			break;
+		default:
+			return 0;
+	}
+	if(!EVP_DecryptInit(&ctx, cipher, key->k_enc, NULL)) goto cleanup;
+	
+	*plaintext_len = 0;
+	
+	if(!EVP_DecryptUpdate(&ctx, plaintext, (int *)plaintext_len, input, input_len)) goto cleanup;
+	EVP_DecryptFinal(&ctx, plaintext + *plaintext_len, &len);
+	
+	*plaintext_len += len;
+	
+	return 1;
+
+cleanup:
+	*plaintext_len = 0;
+
+	return 0;
+	
+}
+
+int encrypt_and_authentucate_secrets(CPOR_key *key, unsigned char *input, size_t input_len, unsigned char *ciphertext, size_t *ciphertext_len, unsigned char *authenticator, size_t *authenticator_len){
+	
+	EVP_CIPHER_CTX ctx;
+	EVP_CIPHER *cipher = NULL;
+	int len;
+	
+	if(!key || !key->k_enc || !key->k_mac || !input || !input_len || !ciphertext || !ciphertext_len || !authenticator || !authenticator_len) return 0;
+	
+	OpenSSL_add_all_algorithms();
+	
+	EVP_CIPHER_CTX_init(&ctx);
+	switch(key->k_enc_size){
+		case 16:
+			cipher = (EVP_CIPHER *)EVP_aes_128_cbc();
+			break;
+		case 24:
+			cipher = (EVP_CIPHER *)EVP_aes_192_cbc();
+			break;
+		case 32:
+			cipher = (EVP_CIPHER *)EVP_aes_256_cbc();
+			break;
+		default:
+			return 0;
+	}
+	//TODO: Fix the NULL IV
+	if(!EVP_EncryptInit(&ctx, cipher, key->k_enc, NULL)) goto cleanup;
+
+	*ciphertext_len = 0;
+	
+	if(!EVP_EncryptUpdate(&ctx, ciphertext, (int *)ciphertext_len, input, input_len)) goto cleanup;
+	EVP_EncryptFinal(&ctx, ciphertext + *ciphertext_len, &len);
+		
+	*ciphertext_len += len;
+	
+	*authenticator_len = 0;
+	/* Do the HMAC-SHA1 */
+	if(!HMAC(EVP_sha1(), key->k_mac, key->k_mac_size, ciphertext, *ciphertext_len,
+		authenticator, (unsigned int *)authenticator_len)) goto cleanup;
+	
+	return 1;
+	
+cleanup:
+	*ciphertext_len = 0;
+	*authenticator_len = 0;
+	
+	return 0;
+	
+}
+
+CPOR_t *cpor_create_t(CPOR_global *global, unsigned int n){
+
+	CPOR_t *t = NULL;
+	int i = 0;
+	
+	if( ((t = allocate_cpor_t()) == NULL)) goto cleanup;
+	
+	/* Generate a random PRF key, k_prf */
+	if(!RAND_bytes(t->k_prf, CPOR_PRF_KEY_SIZE)) goto cleanup;
+
+	for(i = 0; i < CPOR_NUM_SECTORS; i++)
+		if(!BN_rand_range(t->alpha[i], global->Zp)) goto cleanup;
+	
+	t->n = n;
+	
+	return t;
+	
+cleanup:
+	if(t) destroy_cpor_t(t);
+	return NULL;
+}
+
+
+int verify_cpor_key(CPOR_key *key){
 
 	if(!key->k_enc) return 0;
 	if(!key->k_mac) return 0;
@@ -128,6 +274,7 @@ void destroy_cpor_challenge(CPOR_challenge *challenge){
 		sfree(challenge->nu, sizeof(BIGNUM *) * challenge->l);
 	}
 	challenge->l = 0;
+	if(challenge->global) destroy_cpor_global(challenge->global);
 	sfree(challenge, sizeof(CPOR_challenge));
 	
 	return;
@@ -147,7 +294,7 @@ CPOR_challenge *allocate_cpor_challenge(unsigned int l){
 	memset(challenge->nu, 0, sizeof(BIGNUM *) * challenge->l);
 	for(i = 0; i < challenge->l; i++)
 		if( ((challenge->nu[i] = BN_new()) == NULL)) goto cleanup;
-	
+	if( ((challenge->global = allocate_cpor_global()) == NULL)) goto cleanup;
 
 	return challenge;
 	
@@ -178,6 +325,46 @@ CPOR_tag *allocate_cpor_tag(){
 	
 cleanup:
 	if(tag) destroy_cpor_tag(tag);
+	return NULL;
+	
+}
+
+void destroy_cpor_t(CPOR_t *t){
+
+	int i;
+
+	if(!t) return;
+	if(t->k_prf) sfree(t->k_prf, CPOR_PRF_KEY_SIZE);
+	if(t->alpha){
+		for(i = 0; i < CPOR_NUM_SECTORS; i++)
+			if(t->alpha[i]) BN_clear_free(t->alpha[i]);
+		 sfree(t->alpha, sizeof(BIGNUM *) * CPOR_NUM_SECTORS);
+	}
+	t->n = 0;
+	sfree(t, sizeof(CPOR_t));
+	
+	return;
+}
+
+CPOR_t *allocate_cpor_t(){
+
+	CPOR_t *t = NULL;
+	int i = 0;
+	
+	if( ((t = malloc(sizeof(CPOR_t))) == NULL)) return NULL;
+	memset(t, 0, sizeof(CPOR_t));
+	t->n = 0;
+	if( ((t->k_prf = malloc(CPOR_PRF_KEY_SIZE)) == NULL)) goto cleanup;
+	if( ((t->alpha = malloc(sizeof(BIGNUM *) * CPOR_NUM_SECTORS)) == NULL)) goto cleanup;
+	memset(t->alpha, 0, sizeof(BIGNUM *) * CPOR_NUM_SECTORS);	
+	for(i = 0; i < CPOR_NUM_SECTORS; i++){
+		t->alpha[i] = BN_new();
+	}
+	
+	return t;
+
+cleanup:
+	destroy_cpor_t(t);
 	return NULL;
 	
 }
@@ -220,3 +407,4 @@ cleanup:
 
 	
 }
+
