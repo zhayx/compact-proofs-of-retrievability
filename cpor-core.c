@@ -1,7 +1,7 @@
 /* 
 * cpor-core.c
 *
-* Copyright (c) 2008, Zachary N J Peterson <znpeters@nps.edu>
+* Copyright (c) 2010, Zachary N J Peterson <znpeters@nps.edu>
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -11,7 +11,7 @@
 *     * Redistributions in binary form must reproduce the above copyright
 *       notice, this list of conditions and the following disclaimer in the
 *       documentation and/or other materials provided with the distribution.
-*     * Neither the name of the <organization> nor the
+*     * Neither the name of the Naval Postgraduate School nor the
 *       names of its contributors may be used to endorse or promote products
 *       derived from this software without specific prior written permission.
 *
@@ -43,7 +43,7 @@ CPOR_global *cpor_create_global(unsigned int bits){
 	if(!BN_generate_prime(global->Zp, bits, 1, NULL, NULL, NULL, NULL)) goto cleanup;
 	/* Check to see it's prime afterall */
 	if(!BN_is_prime(global->Zp, BN_prime_checks, NULL, ctx, NULL)) goto cleanup;
-	
+
 	if(ctx) BN_CTX_free(ctx);
 		
 	return global;
@@ -155,7 +155,8 @@ CPOR_challenge *cpor_create_challenge(CPOR_global *global, unsigned int n){
 		l = CPOR_ZP_BITS;
 	else
 		l = n;
-	
+
+
 	/* Allocate memory */
 	if( ((challenge = allocate_cpor_challenge(l)) == NULL)) goto cleanup;
 	
@@ -170,15 +171,18 @@ CPOR_challenge *cpor_create_challenge(CPOR_global *global, unsigned int n){
 		random_indices[swapwith] = random_indices[i];
 		random_indices[i] = tmp;
 	}
-	for(i = 0; i < l; i++)
+	for(i = 0; i < l; i++){
 		challenge->I[i] = random_indices[i];
-	
+	}
+
 	sfree(random_indices, sizeof(unsigned int) * n);
 	
 	/* Randomly choose l elements of Zp (with replacement) */
-	for(i = 0; i < l; i++){
+	for(i = 0; i < l; i++)
 		if(!BN_rand_range(challenge->nu[i], global->Zp)) goto cleanup;
-	}
+	
+	/* Set the global */
+	if(!BN_copy(challenge->global->Zp, global->Zp)) goto cleanup;
 	
 	return challenge;
 	
@@ -189,13 +193,20 @@ cleanup:
 	return NULL;
 }
 
+CPOR_proof *cpor_create_proof_final(CPOR_proof *proof){
+
+	return proof;
+}
+
 /* For each message index i, call update (we're going to call this challenge->l times */
-CPOR_proof *cpor_create_proof_update(CPOR_global *global, CPOR_challenge *challenge, CPOR_proof *proof, CPOR_tag *tag, unsigned char *block, size_t blocksize, unsigned int i){
+CPOR_proof *cpor_create_proof_update(CPOR_challenge *challenge, CPOR_proof *proof, CPOR_tag *tag, unsigned char *block, size_t blocksize, unsigned int index, unsigned int i){
 
 	BN_CTX * ctx = NULL;
 	BIGNUM *message = NULL;
 	BIGNUM *product = NULL;
 	int j = 0;	
+	
+	if(!challenge || !tag || !block) goto cleanup;
 	
 	if(!proof)
 		if( ((proof = allocate_cpor_proof()) == NULL)) goto cleanup;
@@ -214,25 +225,25 @@ CPOR_proof *cpor_create_proof_update(CPOR_global *global, CPOR_challenge *challe
 			sector_size = (blocksize - (j * CPOR_SECTOR_SIZE));
 
 		/* Convert the sector into a BIGNUM */
-		if( ((message = BN_bin2bn(sector, sector_size, NULL)) == NULL)) goto cleanup;
+		if(!BN_bin2bn(sector, (unsigned int)sector_size, message)) goto cleanup;
 
 		/* Check to see if the message is still an element of Zp */
-		if(BN_ucmp(message, global->Zp) == 1) goto cleanup;
+		if(BN_ucmp(message, challenge->global->Zp) == 1) goto cleanup;
 
 		/* multiply nu_i and m_ij */
-		if(!BN_mod_mul(product, challenge->nu[i], message, global->Zp, ctx)) goto cleanup;
+		if(!BN_mod_mul(product, challenge->nu[i], message, challenge->global->Zp, ctx)) goto cleanup;
 
 		/* Sum the nu_i-m_ij products together */
-		if(!BN_mod_add(proof->mu[j], proof->mu[j], product, global->Zp, ctx)) goto cleanup;
+		if(!BN_mod_add(proof->mu[j], proof->mu[j], product, challenge->global->Zp, ctx)) goto cleanup;
 		
 	}
 	
 	/* Calculate sigma */
 	/* multiply nu_i (challenge) and sigma_i (tag) */
-	if(!BN_mod_mul(product, challenge->nu[i], tag->sigma, global->Zp, ctx)) goto cleanup;
+	if(!BN_mod_mul(product, challenge->nu[i], tag->sigma, challenge->global->Zp, ctx)) goto cleanup;
 
 	/* Sum the nu_i-sigma_i products together */
-	if(!BN_mod_add(proof->sigma, proof->sigma, product, global->Zp, ctx)) goto cleanup;
+	if(!BN_mod_add(proof->sigma, proof->sigma, product, challenge->global->Zp, ctx)) goto cleanup;
 	
 	if(message) BN_clear_free(message);
 	if(product) BN_clear_free(product);	
@@ -250,7 +261,7 @@ cleanup:
 }
 
 
-int cpor_verify_proof(CPOR_global *global, CPOR_proof *proof, CPOR_challenge *challenge, CPOR_tag *tag, unsigned char *k_prf, BIGNUM **alpha){
+int cpor_verify_proof(CPOR_global *global, CPOR_proof *proof, CPOR_challenge *challenge, unsigned char *k_prf, BIGNUM **alpha){
 
 	BN_CTX * ctx = NULL;
 	BIGNUM *prf_i = NULL;
@@ -258,7 +269,7 @@ int cpor_verify_proof(CPOR_global *global, CPOR_proof *proof, CPOR_challenge *ch
 	BIGNUM *sigma = NULL;
 	int i = 0, j = 0, ret = -1;
 
-	if(!global || !proof || !challenge || !tag || !k_prf || !alpha) return -1;
+	if(!global || !proof || !challenge || !k_prf || !alpha) return -1;
 
 	if( ((ctx = BN_CTX_new()) == NULL)) goto cleanup;
 	if( ((prf_i = BN_new()) == NULL)) goto cleanup;
@@ -307,6 +318,7 @@ cleanup:
 	return -1;
 
 }
+
 
 
 
