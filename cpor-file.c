@@ -302,11 +302,9 @@ int cpor_tag_file(char *filepath, size_t filepath_len, char *tagfilepath, size_t
 	
 	/* Check to see if the tag file exists */
 	if( (access(realtagfilepath, F_OK) == 0) || (access(realtfilepath, F_OK) == 0)){
-#ifndef DEBUG
 		fprintf(stdout, "WARNING: Tag files for %s already exist; do you want to overwite (y/N)?", filepath);
 		scanf("%c", &yesorno);
 		if(yesorno != 'y') goto exit;
-#endif
 	}
 	
 	tagfile = fopen(realtagfilepath, "w");
@@ -381,19 +379,29 @@ cleanup:
 	return 0;
 }
 
-CPOR_challenge *cpor_challenge_file(char *tfilepath, size_t tfilepath_len){
+CPOR_challenge *cpor_challenge_file(char *filepath, size_t filepath_len, char *tfilepath, size_t tfilepath_len){
 
 	CPOR_key *key = NULL;
 	CPOR_challenge *challenge = NULL;
 	FILE *tfile = NULL;
 	CPOR_t *t = NULL;
+	char realtfilepath[MAXPATHLEN];
 
-	if(!tfilepath) return NULL;
+	if(!filepath) return NULL;
+	
+	memset(realtfilepath, 0, MAXPATHLEN);
+	
+	/* If no t file path is specified, add a .t extension to the filepath */
+	if(!tfilepath && (filepath_len < MAXPATHLEN - 3)){
+		if( snprintf(realtfilepath, MAXPATHLEN, "%s.t", filepath) >= MAXPATHLEN ) goto cleanup;
+	}else{
+		memcpy(realtfilepath, tfilepath, tfilepath_len);
+	}
 	
 	/* Open the t file for reading */
-	tfile = fopen(tfilepath, "r");
+	tfile = fopen(realtfilepath, "r");
 	if(!tfile){
-		fprintf(stderr, "ERROR: Was not able to open %s for reading.\n", tfilepath);
+		fprintf(stderr, "ERROR: Was not able to open %s for reading.\n", realtfilepath);
 		goto cleanup;
 	}
 	
@@ -435,8 +443,7 @@ CPOR_proof *cpor_prove_file(char *filepath, size_t filepath_len, char *tagfilepa
 	if(tagfilepath_len >= MAXPATHLEN) return 0;
 	
 	memset(block, 0, CPOR_BLOCK_SIZE);
-	memset(realtagfilepath, 0, MAXPATHLEN);
-	
+	memset(realtagfilepath, 0, MAXPATHLEN);	
 
 	file = fopen(filepath, "r");
 	if(!file){
@@ -493,19 +500,29 @@ cleanup:
 	return NULL;
 }
 
-int CPOR_verify_file(char *tfilepath, size_t tfilepath_len, CPOR_challenge *challenge, CPOR_proof *proof){
+int CPOR_verify_file(char *filepath, size_t filepath_len, char *tfilepath, size_t tfilepath_len, CPOR_challenge *challenge, CPOR_proof *proof){
 	
 	CPOR_key *key = NULL;
 	CPOR_t *t = NULL;
 	FILE *tfile = NULL;
 	int ret = -1;
+	char realtfilepath[MAXPATHLEN];
 	
-	if(!tfilepath || !challenge || !proof) return -1;
+	if(!filepath || !challenge || !proof) return -1;
+	
+	memset(realtfilepath, 0, MAXPATHLEN);
+	
+	/* If no t file path is specified, add a .t extension to the filepath */
+	if(!tfilepath && (filepath_len < MAXPATHLEN - 3)){
+		if( snprintf(realtfilepath, MAXPATHLEN, "%s.t", filepath) >= MAXPATHLEN ) goto cleanup;
+	}else{
+		memcpy(realtfilepath, tfilepath, tfilepath_len);
+	}
 	
 	/* Open the t file for reading */
-	tfile = fopen(tfilepath, "r");
+	tfile = fopen(realtfilepath, "r");
 	if(!tfile){
-		fprintf(stderr, "ERROR: Was not able to open %s for reading.\n", tfilepath);
+		fprintf(stderr, "ERROR: Was not able to open %s for reading.\n", realtfilepath);
 		goto cleanup;
 	}
 	

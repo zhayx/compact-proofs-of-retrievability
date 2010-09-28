@@ -29,8 +29,6 @@
 
 #include "cpor.h"
 
-#include "cpor.h"
-
 int main(int argc, char **argv){
 	
 	CPOR_challenge *challenge = NULL;
@@ -43,18 +41,20 @@ int main(int argc, char **argv){
 	
 	if(!cpor_create_new_keys()) printf("Couldn't create keys\n");
 	
-	if(!cpor_tag_file(argv[1], strlen(argv[1]), NULL, 0, "tfile.t", strlen("tfile.t"))) printf("No tag\n");
+	if(!cpor_tag_file(argv[1], strlen(argv[1]), NULL, 0, NULL, 0)) printf("No tag\n");
 
-	challenge = cpor_challenge_file("tfile.t", strlen("tfile.t"));
+	challenge = cpor_challenge_file(argv[1], strlen(argv[1]), NULL, 0);
 	if(!challenge) printf("No challenge\n");
 	
 	proof = cpor_prove_file(argv[1], strlen(argv[1]), NULL, 0, challenge);
 	if(!proof) printf("No proof\n");
 	
-	if((i = CPOR_verify_file("tfile.t", strlen("tfile.t"), challenge, proof)) == 1) printf("Verified\n");
+	if((i = CPOR_verify_file(argv[1], strlen(argv[1]), NULL, 0, challenge, proof)) == 1) printf("Verified\n");
 	else if(i == 0) printf("Cheating!\n");
 	else printf("Error\n");
 	
+	if(challenge) destroy_cpor_challenge(challenge);
+	if(proof) destroy_cpor_proof(proof);
 	
 /*
 	unsigned char k_prf[CPOR_PRF_KEY_SIZE];

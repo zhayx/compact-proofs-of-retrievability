@@ -51,7 +51,7 @@
 #define CPOR_ENC_KEY_SIZE 32 /* Size (in bytes) of the user's AES encryption key */
 #define CPOR_MAC_KEY_SIZE 20 /* Size (in bytes) of the user's MAC key */
 
-#define CPOR_BLOCK_SIZE ((CPOR_ZP_BITS/8) - 1) /* Message block size in bytes */
+#define CPOR_BLOCK_SIZE 4096 //((CPOR_ZP_BITS/8) - 1) /* Message block size in bytes */
 
 /* The sector size 1 byte smaller than the size of Zp so that it 
  * is guaranteed to be an element of the group Zp */
@@ -114,11 +114,11 @@ struct CPOR_proof_struct{
 /* File-level CPOR functions from cpor-file.c */
 int cpor_tag_file(char *filepath, size_t filepath_len, char *tagfilepath, size_t tagfilepath_len, char *tfilepath, size_t tfilepath_len);
 
-CPOR_challenge *cpor_challenge_file(char *tfilepath, size_t tfilepath_len);
+CPOR_challenge *cpor_challenge_file(char *filepath, size_t filepath_len, char *tfilepath, size_t tfilepath_len);
 
 CPOR_proof *cpor_prove_file(char *filepath, size_t filepath_len, char *tagfilepath, size_t tagfilepath_len, CPOR_challenge *challenge);
 
-int CPOR_verify_file(char *tfilepath, size_t tfilepath_len, CPOR_challenge *challenge, CPOR_proof *proof);
+int CPOR_verify_file(char *filepath, size_t filepath_len, char *tfilepath, size_t tfilepath_len, CPOR_challenge *challenge, CPOR_proof *proof);
 
 /* Key management from cpor-keys.c */
 
