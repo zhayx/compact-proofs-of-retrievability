@@ -151,8 +151,8 @@ CPOR_challenge *cpor_create_challenge(CPOR_global *global, unsigned int n){
 	if(!global->Zp) return NULL;
 	
 	/* Choose l.  From the paper, a "conservative choice" for l is lamda, the number of bits to represent our group, Zp */
-	if(n > CPOR_ZP_BITS)
-		l = CPOR_ZP_BITS;
+	if(n > CPOR_LAMBDA)
+		l = CPOR_LAMBDA;
 	else
 		l = n;
 

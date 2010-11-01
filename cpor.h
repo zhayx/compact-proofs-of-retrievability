@@ -45,7 +45,8 @@
 
 #define DEBUG
 
-#define CPOR_ZP_BITS 80 /* The size (in bits) of the prime that creates the field Z_p */
+#define CPOR_LAMBDA 80 /* The security parameter lambda */
+#define CPOR_ZP_BITS CPOR_LAMBDA /* The size (in bits) of the prime that creates the field Z_p */
 
 #define CPOR_PRF_KEY_SIZE 20 /* Size (in bytes) of an HMAC-SHA1 */
 #define CPOR_ENC_KEY_SIZE 32 /* Size (in bytes) of the user's AES encryption key */
