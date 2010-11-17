@@ -34,19 +34,66 @@ int main(int argc, char **argv){
 	CPOR_challenge *challenge = NULL;
 	CPOR_proof *proof = NULL;
 	int i = -1;
+#ifdef USE_S3
+	char tagfilepath[MAXPATHLEN];
+	char tfilepath[MAXPATHLEN];
+#endif	
 	
 	if(!argv[1]) return -1;
 	
-	printf("Blocksize: %d bytes. Sector size: %d bytes. Num sectors per block: %d\n", CPOR_BLOCK_SIZE, CPOR_SECTOR_SIZE, CPOR_NUM_SECTORS);
-	
-	if(!cpor_tag_file(argv[1], strlen(argv[1]), NULL, 0, NULL, 0)) printf("No tag\n");
+	//printf("Blocksize: %d bytes. Sector size: %d bytes. Num sectors per block: %d\n", CPOR_BLOCK_SIZE, CPOR_SECTOR_SIZE, CPOR_NUM_SECTORS);
 
+	fprintf(stdout, "Tagging %s...", argv[1]); fflush(stdout);
+	if(!cpor_tag_file(argv[1], strlen(argv[1]), NULL, 0, NULL, 0)) printf("No tag\n");
+	else printf("Done\n");
+	
+#ifdef USE_S3
+	fprintf(stdout, "\tWriting file %s to S3...", argv[1]); fflush(stdout);
+	if(!cpor_s3_put_file(argv[1], strlen(argv[1]))) printf("Couldn't write %s to S3.\n", argv[1]);
+	else printf("Done.\n");
+	
+	memset(tagfilepath, 0, MAXPATHLEN);
+	snprintf(tagfilepath, MAXPATHLEN, "%s.tag", argv[1]);
+	fprintf(stdout, "\tWriting tag file %s to S3...", tagfilepath); fflush(stdout);
+	if(!cpor_s3_put_file(tagfilepath, strlen(tagfilepath))) printf("Couldn't write %s to S3.\n", argv[1]);
+	else printf("Done.\n");
+	
+	memset(tfilepath, 0, MAXPATHLEN);
+	snprintf(tfilepath, MAXPATHLEN, "%s.t", argv[1]);
+	fprintf(stdout, "\tWriting t file %s to S3...", tfilepath); fflush(stdout);
+	if(!cpor_s3_put_file(tfilepath, strlen(tfilepath))) printf("Couldn't write %s to S3.\n", argv[1]);
+	else printf("Done.\n");			
+#endif	
+
+	fprintf(stdout, "Challenging file %s...\n", argv[1]); fflush(stdout);				
+
+#ifdef USE_S3
+	printf("\tGetting tag file...");fflush(stdout);
+	fflush(stdout);
+	if(!cpor_s3_get_file(tagfilepath, strlen(tagfilepath))) printf("Cloudn't get tag file.\n");
+	else printf("Done.\n");
+	
+	printf("\tGetting t file...");fflush(stdout);
+	fflush(stdout);
+	if(!cpor_s3_get_file(tfilepath, strlen(tfilepath))) printf("Cloudn't get t file.\n");
+	else printf("Done.\n");
+#endif
+
+	fprintf(stdout, "\tCreating challenge for %s...", argv[1]); fflush(stdout);
 	challenge = cpor_challenge_file(argv[1], strlen(argv[1]), NULL, 0);
 	if(!challenge) printf("No challenge\n");
-	
+	else printf("Done.\n");
+
+	fprintf(stdout, "\tComputing proof...");fflush(stdout);
+#ifdef USE_S3
+	proof = cpor_s3_prove_file(argv[1], strlen(argv[1]), NULL, 0, challenge);
+#else	
 	proof = cpor_prove_file(argv[1], strlen(argv[1]), NULL, 0, challenge);
+#endif
 	if(!proof) printf("No proof\n");
-	
+	else printf("Done.\n");
+
+	printf("\tVerifying proof..."); fflush(stdout);		
 	if((i = cpor_verify_file(argv[1], strlen(argv[1]), NULL, 0, challenge, proof)) == 1) printf("Verified\n");
 	else if(i == 0) printf("Cheating!\n");
 	else printf("Error\n");
@@ -54,7 +101,6 @@ int main(int argc, char **argv){
 	if(challenge) destroy_cpor_challenge(challenge);
 	if(proof) destroy_cpor_proof(proof);
 	
-	while(1);
 /*
 	unsigned char k_prf[CPOR_PRF_KEY_SIZE];
 	unsigned char block[CPOR_BLOCK_SIZE];

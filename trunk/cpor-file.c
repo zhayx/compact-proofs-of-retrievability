@@ -59,7 +59,7 @@ cleanup:
 	return 0;
 }
 
-static CPOR_tag *read_cpor_tag(FILE *tagfile, unsigned int index){
+CPOR_tag *read_cpor_tag(FILE *tagfile, unsigned int index){
 
 	CPOR_tag *tag = NULL;
 	size_t sigma_size = 0;
