@@ -121,6 +121,8 @@ CPOR_proof *cpor_prove_file(char *filepath, size_t filepath_len, char *tagfilepa
 
 int cpor_verify_file(char *filepath, size_t filepath_len, char *tfilepath, size_t tfilepath_len, CPOR_challenge *challenge, CPOR_proof *proof);
 
+CPOR_tag *read_cpor_tag(FILE *tagfile, unsigned int index);
+
 /* Key management from cpor-keys.c */
 
 CPOR_key *cpor_create_new_keys();
@@ -175,5 +177,12 @@ CPOR_t *allocate_cpor_t();
 
 void destroy_cpor_global(CPOR_global *global);
 CPOR_global *allocate_cpor_global();
+
+/* From cpor-s3.c */
+#ifdef USE_S3
+int cpor_s3_put_file(char *filepath, size_t filepath_len);
+int cpor_s3_get_file(char *filepath, size_t filepath_len);
+CPOR_proof *cpor_s3_prove_file(char *filepath, size_t filepath_len, char *tagfilepath, size_t tagfilepath_len, CPOR_challenge *challenge);
+#endif
 
 #endif
