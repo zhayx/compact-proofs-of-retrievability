@@ -119,7 +119,7 @@ CPOR_challenge *cpor_challenge_file(char *filepath, size_t filepath_len, char *t
 
 CPOR_proof *cpor_prove_file(char *filepath, size_t filepath_len, char *tagfilepath, size_t tagfilepath_len, CPOR_challenge *challenge);
 
-int CPOR_verify_file(char *filepath, size_t filepath_len, char *tfilepath, size_t tfilepath_len, CPOR_challenge *challenge, CPOR_proof *proof);
+int cpor_verify_file(char *filepath, size_t filepath_len, char *tfilepath, size_t tfilepath_len, CPOR_challenge *challenge, CPOR_proof *proof);
 
 /* Key management from cpor-keys.c */
 

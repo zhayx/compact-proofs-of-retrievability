@@ -39,8 +39,6 @@ int main(int argc, char **argv){
 	
 	printf("Blocksize: %d bytes. Sector size: %d bytes. Num sectors per block: %d\n", CPOR_BLOCK_SIZE, CPOR_SECTOR_SIZE, CPOR_NUM_SECTORS);
 	
-	if(!cpor_create_new_keys()) printf("Couldn't create keys\n");
-	
 	if(!cpor_tag_file(argv[1], strlen(argv[1]), NULL, 0, NULL, 0)) printf("No tag\n");
 
 	challenge = cpor_challenge_file(argv[1], strlen(argv[1]), NULL, 0);
@@ -49,13 +47,14 @@ int main(int argc, char **argv){
 	proof = cpor_prove_file(argv[1], strlen(argv[1]), NULL, 0, challenge);
 	if(!proof) printf("No proof\n");
 	
-	if((i = CPOR_verify_file(argv[1], strlen(argv[1]), NULL, 0, challenge, proof)) == 1) printf("Verified\n");
+	if((i = cpor_verify_file(argv[1], strlen(argv[1]), NULL, 0, challenge, proof)) == 1) printf("Verified\n");
 	else if(i == 0) printf("Cheating!\n");
 	else printf("Error\n");
 	
 	if(challenge) destroy_cpor_challenge(challenge);
 	if(proof) destroy_cpor_proof(proof);
 	
+	while(1);
 /*
 	unsigned char k_prf[CPOR_PRF_KEY_SIZE];
 	unsigned char block[CPOR_BLOCK_SIZE];

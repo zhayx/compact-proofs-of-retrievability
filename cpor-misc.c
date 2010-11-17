@@ -79,8 +79,7 @@ BIGNUM *generate_prf_i(unsigned char *key, unsigned int index){
 		prf_result, (unsigned int *)&prf_result_size)) goto cleanup;
 		
 	/* Convert PRF result into a BIGNUM */
-	prf_result_bn = BN_bin2bn(prf_result, prf_result_size, NULL);
-	if(!prf_result_bn) goto cleanup;
+	if(!BN_bin2bn(prf_result, prf_result_size, prf_result_bn)) goto cleanup;
 	
 	/* Free some memory */
 	if(prf_result) sfree(prf_result, EVP_MAX_MD_SIZE);	
@@ -96,10 +95,15 @@ cleanup:
 
 size_t get_ciphertext_size(size_t plaintext_len){
 
+	size_t block_size = 0;
+
 	EVP_CIPHER_CTX ctx;
 	EVP_CIPHER_CTX_init(&ctx);
-	if(!EVP_EncryptInit(&ctx, EVP_aes_256_cbc(), NULL, NULL)) return 0;
-	return plaintext_len + EVP_CIPHER_CTX_block_size(&ctx);
+	if(!EVP_EncryptInit_ex(&ctx, EVP_aes_256_cbc(), NULL, NULL, NULL)) return 0;
+	block_size = EVP_CIPHER_CTX_block_size(&ctx);
+	EVP_CIPHER_CTX_cleanup(&ctx);
+		
+	return plaintext_len + block_size;
 }
 
 size_t get_authenticator_size(){
@@ -149,6 +153,8 @@ int decrypt_and_verify_secrets(CPOR_key *key, unsigned char *input, size_t input
 	
 	*plaintext_len += len;
 	
+	EVP_CIPHER_CTX_cleanup(&ctx);
+	
 	return 1;
 
 cleanup:
@@ -196,6 +202,8 @@ int encrypt_and_authentucate_secrets(CPOR_key *key, unsigned char *input, size_t
 	/* Do the HMAC-SHA1 */
 	if(!HMAC(EVP_sha1(), key->k_mac, key->k_mac_size, ciphertext, *ciphertext_len,
 		authenticator, (unsigned int *)authenticator_len)) goto cleanup;
+	
+	EVP_CIPHER_CTX_cleanup(&ctx);	
 	
 	return 1;
 	

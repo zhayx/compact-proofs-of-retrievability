@@ -37,7 +37,7 @@ CPOR_global *cpor_create_global(unsigned int bits){
 	if(!bits) return NULL;
 	
 	if( ((global = allocate_cpor_global()) == NULL)) goto cleanup;
-	if( ((ctx=BN_CTX_new()) == NULL)) goto cleanup;
+	if( ((ctx = BN_CTX_new()) == NULL)) goto cleanup;
 		
 	/* Generate a bits-sized safe prime for our group Zp */
 	if(!BN_generate_prime(global->Zp, bits, 1, NULL, NULL, NULL, NULL)) goto cleanup;
@@ -76,7 +76,6 @@ CPOR_tag *cpor_tag_block(CPOR_global *global, unsigned char *k_prf, BIGNUM **alp
 	/* Allocate memory */
 	if( ((tag = allocate_cpor_tag()) == NULL)) goto cleanup;
 	if( ((ctx = BN_CTX_new()) == NULL)) goto cleanup;
-	if( ((prf_i = BN_new()) == NULL)) goto cleanup;
 	if( ((message = BN_new()) == NULL)) goto cleanup;
 	if( ((product = BN_new()) == NULL)) goto cleanup;
 	if( ((sum = BN_new()) == NULL)) goto cleanup;
@@ -96,7 +95,7 @@ CPOR_tag *cpor_tag_block(CPOR_global *global, unsigned char *k_prf, BIGNUM **alp
 			sector_size = (blocksize - (j * CPOR_SECTOR_SIZE));
 		
 		/* Convert the sector into a BIGNUM */
-		if( ((message = BN_bin2bn(sector, sector_size, NULL)) == NULL)) goto cleanup;
+		if(!BN_bin2bn(sector, sector_size, message)) goto cleanup;
 
 		/* Check to see if the message is still an element of Zp */
 		if(BN_ucmp(message, global->Zp) == 1) goto cleanup;
@@ -272,7 +271,6 @@ int cpor_verify_proof(CPOR_global *global, CPOR_proof *proof, CPOR_challenge *ch
 	if(!global || !proof || !challenge || !k_prf || !alpha) return -1;
 
 	if( ((ctx = BN_CTX_new()) == NULL)) goto cleanup;
-	if( ((prf_i = BN_new()) == NULL)) goto cleanup;
 	if( ((product = BN_new()) == NULL)) goto cleanup;
 	if( ((sigma = BN_new()) == NULL)) goto cleanup;
 		
@@ -286,7 +284,8 @@ int cpor_verify_proof(CPOR_global *global, CPOR_proof *proof, CPOR_challenge *ch
 		
 		/* Sum the results */
 		if(!BN_mod_add(sigma, sigma, product, global->Zp, ctx)) goto cleanup;
-
+		
+		if(prf_i) BN_clear_free(prf_i);
 	}
 	
 	/* Compute the summation of all the products (alpha_j * mu_j) */
@@ -302,7 +301,7 @@ int cpor_verify_proof(CPOR_global *global, CPOR_proof *proof, CPOR_challenge *ch
 	if(BN_ucmp(sigma, proof->sigma) == 0) ret = 1;
 	else ret = 0;
 	
-	if(prf_i) BN_clear_free(prf_i);
+
 	if(product) BN_clear_free(product);
 	if(sigma) BN_clear_free(sigma);
 	if(ctx) BN_CTX_free(ctx);

@@ -248,7 +248,8 @@ static CPOR_t *read_cpor_t(FILE *tfile, CPOR_key *key){
 	if(plaintext) sfree(plaintext, plaintext_size);
 	if(tbytes) sfree(tbytes, tbytes_size);
 	if(t0) sfree(t0, t0_size);
-
+	if(t0_mac) sfree(t0_mac, t0_mac_size);
+	
 	return t;
 	
 cleanup:
@@ -256,6 +257,7 @@ cleanup:
 	if(alpha) sfree(alpha, alpha_size);
 	if(tbytes) sfree(tbytes, tbytes_size);
 	if(t0) sfree(t0, t0_size);
+	if(t0_mac) sfree(t0_mac, t0_mac_size);
 	if(t) destroy_cpor_t(t);
 
 	return NULL;
@@ -285,6 +287,7 @@ int cpor_tag_file(char *filepath, size_t filepath_len, char *tagfilepath, size_t
 	if(!filepath) return 0;
 	if(filepath_len >= MAXPATHLEN) return 0;
 	if(tagfilepath_len >= MAXPATHLEN) return 0;
+	if(tfilepath_len >= MAXPATHLEN) return 0;
 	
 	/* If no tag file path is specified, add a .tag extension to the filepath */
 	if(!tagfilepath && (filepath_len < MAXPATHLEN - 5)){
@@ -416,12 +419,14 @@ CPOR_challenge *cpor_challenge_file(char *filepath, size_t filepath_len, char *t
 	challenge = cpor_create_challenge(key->global, t->n);
 	if(!challenge) goto cleanup;
 
+	if(key) destroy_cpor_key(key);
 	if(tfile) fclose(tfile);
 	if(t) destroy_cpor_t(t);
 	
 	return challenge;
 
 cleanup:
+	if(key) destroy_cpor_key(key);
 	if(tfile) fclose(tfile);
 	if(t) destroy_cpor_t(t);
 	return NULL;
@@ -500,7 +505,7 @@ cleanup:
 	return NULL;
 }
 
-int CPOR_verify_file(char *filepath, size_t filepath_len, char *tfilepath, size_t tfilepath_len, CPOR_challenge *challenge, CPOR_proof *proof){
+int cpor_verify_file(char *filepath, size_t filepath_len, char *tfilepath, size_t tfilepath_len, CPOR_challenge *challenge, CPOR_proof *proof){
 	
 	CPOR_key *key = NULL;
 	CPOR_t *t = NULL;
