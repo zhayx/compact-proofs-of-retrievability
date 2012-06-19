@@ -42,29 +42,66 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/param.h>
+#include <sys/time.h>
 
-#define DEBUG
+#define DEBUG_MODE
+#define THREADING
 
-#define CPOR_LAMBDA 80 /* The security parameter lambda */
-#define CPOR_ZP_BITS CPOR_LAMBDA /* The size (in bits) of the prime that creates the field Z_p */
+/* Modes of operation */
+#define CPOR_OP_NOOP 0x00
+#define CPOR_OP_TAG 0x01
+#define CPOR_OP_VERIFY 0x02
+#define CPOR_OP_KEYGEN 0x03
 
-#define CPOR_PRF_KEY_SIZE 20 /* Size (in bytes) of an HMAC-SHA1 */
-#define CPOR_ENC_KEY_SIZE 32 /* Size (in bytes) of the user's AES encryption key */
-#define CPOR_MAC_KEY_SIZE 20 /* Size (in bytes) of the user's MAC key */
+//#define NUM_THREADS 4
 
-#define CPOR_BLOCK_SIZE 4096 //((CPOR_ZP_BITS/8) - 1) /* Message block size in bytes */
+//#define CPOR_LAMBDA 80 /* The security parameter lambda */
+//#define CPOR_ZP_BITS CPOR_LAMBDA /* The size (in bits) of the prime that creates the field Z_p */
+
+//#define CPOR_PRF_KEY_SIZE 20 /* Size (in bytes) of an HMAC-SHA1 */
+//#define CPOR_ENC_KEY_SIZE 32 /* Size (in bytes) of the user's AES encryption key */
+//#define CPOR_MAC_KEY_SIZE 20 /* Size (in bytes) of the user's MAC key */
+
+//#define CPOR_BLOCK_SIZE 4096 //((CPOR_ZP_BITS/8) - 1) /* Message block size in bytes */
 
 /* The sector size 1 byte smaller than the size of Zp so that it 
  * is guaranteed to be an element of the group Zp */
-#define CPOR_SECTOR_SIZE ((CPOR_ZP_BITS/8) - 1) /* Message sector size in bytes */
+//#define CPOR_SECTOR_SIZE ((CPOR_ZP_BITS/8) - 1) /* Message sector size in bytes */
 
-#define CPOR_NUM_SECTORS ( (CPOR_BLOCK_SIZE/CPOR_SECTOR_SIZE) + ((CPOR_BLOCK_SIZE % CPOR_SECTOR_SIZE) ? 1 : 0) ) /* Number of sectors per block */
+//#define CPOR_NUM_SECTORS ( (CPOR_BLOCK_SIZE/CPOR_SECTOR_SIZE) + ((CPOR_BLOCK_SIZE % CPOR_SECTOR_SIZE) ? 1 : 0) ) /* Number of sectors per block */
+
+
+typedef struct CPOR_parameters_struct CPOR_params;
+
+struct CPOR_parameters_struct{
+	
+		/* Parameters */
+		unsigned int lambda;		/* The security parameter lambda */
+		unsigned int Zp_bits;		/* The size (in bits) of the prime that creates the field Z_p */
+		unsigned int prf_key_size;	/* Size (in bytes) of an HMAC-SHA1 */
+		unsigned int enc_key_size;	/* Size (in bytes) of the user's AES encryption key */
+		unsigned int mac_key_size;	/* Size (in bytes) of the user's MAC key */
+
+		unsigned int block_size;	/* Message block size in bytes */
+		unsigned int sector_size;	/* Message sector size in bytes */
+		unsigned int num_sectors;	/* Number of sectors per block */
+		unsigned int num_challenge;	/* Number of blocks to challenge */
+		
+		unsigned int num_threads;	/* Number of tagging threads */
+		
+		char *filename;
+		unsigned int filename_len;
+		
+		unsigned int op;
+};
+
+extern CPOR_params params;
 
 /* Global settings */
 typedef struct CPOR_global_struct CPOR_global;
 
 struct CPOR_global_struct{
-	BIGNUM *Zp;				/* The prime p that defines the field Zp */
+	BIGNUM *Zp;					/* The prime p that defines the field Zp */
 };
 
 /* This is the client's secret key */
