@@ -29,6 +29,8 @@
 
 #include "cpor.h"
 
+CPOR_params params;
+
 CPOR_global *cpor_create_global(unsigned int bits){
 
 	CPOR_global *global = NULL;
@@ -85,14 +87,14 @@ CPOR_tag *cpor_tag_block(CPOR_global *global, unsigned char *k_prf, BIGNUM **alp
 	
 	BN_clear(sum);
 	/* Sum all alpha * sector products */
-	for(j = 0; j < CPOR_NUM_SECTORS; j++){
+	for(j = 0; j < params.num_sectors; j++){
 		size_t sector_size = 0;
-		unsigned char *sector = block + (j * CPOR_SECTOR_SIZE);
+		unsigned char *sector = block + (j * params.sector_size);
 
-		if( (blocksize - (j * CPOR_SECTOR_SIZE)) > CPOR_SECTOR_SIZE)
-			sector_size = CPOR_SECTOR_SIZE;
+		if( (blocksize - (j * params.sector_size)) > params.sector_size)
+			sector_size = params.sector_size;
 		else
-			sector_size = (blocksize - (j * CPOR_SECTOR_SIZE));
+			sector_size = (blocksize - (j * params.sector_size));
 		
 		/* Convert the sector into a BIGNUM */
 		if(!BN_bin2bn(sector, sector_size, message)) goto cleanup;
@@ -149,12 +151,12 @@ CPOR_challenge *cpor_create_challenge(CPOR_global *global, unsigned int n){
 	if(!global || !n) return NULL;
 	if(!global->Zp) return NULL;
 	
-	/* Choose l.  From the paper, a "conservative choice" for l is lamda, the number of bits to represent our group, Zp */
-	if(n > CPOR_LAMBDA)
-		l = CPOR_LAMBDA;
+	/* Set l, the number of challenge blocks. */
+	if(n > params.num_challenge)
+		l = params.num_challenge;
 	else
 		l = n;
-
+	
 
 	/* Allocate memory */
 	if( ((challenge = allocate_cpor_challenge(l)) == NULL)) goto cleanup;
@@ -214,14 +216,14 @@ CPOR_proof *cpor_create_proof_update(CPOR_challenge *challenge, CPOR_proof *proo
 	if( ((product = BN_new()) == NULL)) goto cleanup;
 	
 	/* Calculate and update the mu's */	
-	for(j = 0; j < CPOR_NUM_SECTORS; j++){
+	for(j = 0; j < params.num_sectors; j++){
 		size_t sector_size = 0;
-		unsigned char *sector = block + (j * CPOR_SECTOR_SIZE);
+		unsigned char *sector = block + (j * params.sector_size);
 
-		if( (blocksize - (j * CPOR_SECTOR_SIZE)) > CPOR_SECTOR_SIZE)
-			sector_size = CPOR_SECTOR_SIZE;
+		if( (blocksize - (j * params.sector_size)) > params.sector_size)
+			sector_size = params.sector_size;
 		else
-			sector_size = (blocksize - (j * CPOR_SECTOR_SIZE));
+			sector_size = (blocksize - (j * params.sector_size));
 
 		/* Convert the sector into a BIGNUM */
 		if(!BN_bin2bn(sector, (unsigned int)sector_size, message)) goto cleanup;
@@ -289,7 +291,7 @@ int cpor_verify_proof(CPOR_global *global, CPOR_proof *proof, CPOR_challenge *ch
 	}
 	
 	/* Compute the summation of all the products (alpha_j * mu_j) */
-	for(j = 0; j < CPOR_NUM_SECTORS; j++){
+	for(j = 0; j < params.num_sectors; j++){
 		
 		/* Multiply alpha_j by mu_j */
 		if(!BN_mod_mul(product, alpha[j], proof->mu[j], global->Zp, ctx)) goto cleanup;	

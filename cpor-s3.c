@@ -1,5 +1,5 @@
 /* 
-* cpor-app.c
+* cpor-s3.c
 *
 * Copyright (c) 2010, Zachary N J Peterson <znpeters@nps.edu>
 * All rights reserved.
@@ -47,7 +47,7 @@ static int putObjectDataCallback(int bufferSize, char *buffer, void *callbackDat
 {
 	int ret = 0;
 
-	ret = fread(buffer, 1, CPOR_BLOCK_SIZE, callbackData);
+	ret = fread(buffer, 1, params.block_size, callbackData);
 
 	return ret;
 	
@@ -136,12 +136,12 @@ static int cpor_s3_get_block(char *filepath, size_t filepath_len, unsigned char 
 int cpor_s3_put_file(char *filepath, size_t filepath_len){
 	
 	FILE *file = NULL;
-	unsigned char buffer[CPOR_BLOCK_SIZE];
+	unsigned char buffer[params.block_size];
 	struct stat statbuf;
 	
 	if(!filepath || !filepath_len) return 0;
 	
-	memset(buffer, 0, CPOR_BLOCK_SIZE);
+	memset(buffer, 0, params.block_size);
 	
 	file = fopen(filepath, "r");
 	if(file == NULL){
@@ -269,7 +269,7 @@ CPOR_proof *cpor_s3_prove_file(char *filepath, size_t filepath_len, char *tagfil
 	CPOR_proof *proof = NULL;
 	FILE *tagfile = NULL;
 	char realtagfilepath[MAXPATHLEN];
-	unsigned char block[CPOR_BLOCK_SIZE];
+	unsigned char block[params.block_size];
 	int i = 0;
 	
 	if(!filepath || !challenge) return 0;
@@ -293,16 +293,16 @@ CPOR_proof *cpor_s3_prove_file(char *filepath, size_t filepath_len, char *tagfil
 	}
 	
 	for(i = 0; i < challenge->l; i++){
-		memset(block, 0, CPOR_BLOCK_SIZE);
+		memset(block, 0, params.block_size);
 	
 		/* Get file block at I[i] from S3 */
-		if(!cpor_s3_get_block(filepath, filepath_len, block, CPOR_BLOCK_SIZE, challenge->I[i])){ fprintf(stderr, "Error reading block %d from S3.\n", challenge->I[i]); goto cleanup; }
+		if(!cpor_s3_get_block(filepath, filepath_len, block, params.block_size, challenge->I[i])){ fprintf(stderr, "Error reading block %d from S3.\n", challenge->I[i]); goto cleanup; }
 		
 		/* Read tag for data block at I[i] */
 		tag = read_cpor_tag(tagfile, challenge->I[i]);
 		if(!tag){ fprintf(stderr, "Error reading tag.\n"); goto cleanup; }
 		
-		proof = cpor_create_proof_update(challenge, proof, tag, block, CPOR_BLOCK_SIZE, challenge->I[i], i);
+		proof = cpor_create_proof_update(challenge, proof, tag, block, params.block_size, challenge->I[i], i);
 		if(!proof){ fprintf(stderr, "Error generating proof.\n"); goto cleanup; }
 		
 		destroy_cpor_tag(tag);

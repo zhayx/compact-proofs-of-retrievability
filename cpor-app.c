@@ -28,81 +28,249 @@
 */
 
 #include "cpor.h"
+#include <getopt.h>
+
+
+
+static struct option longopts[] = {
+	{"numchallenge", no_argument, NULL, 'l'},
+	{"lambda", no_argument, NULL, 'y'}, 
+	{"Zp", no_argument, NULL, 'z'},
+	{"prf_key_size", no_argument, NULL, 'p'},
+	{"enc_key_size", no_argument, NULL, 'e'},
+	{"mac_key_size", no_argument, NULL, 'm'},
+	{"blocksize", no_argument, NULL, 'b'},
+	{"sectorsize", no_argument, NULL, 'c'},
+	{"numsectors", no_argument, NULL, 'n'},
+	{"numthreads", no_argument, NULL, 'h'},
+	{"keygen", no_argument, NULL, 'k'}, //TODO optional argument for key location
+	{"tag", no_argument, NULL, 't'},
+	{"verify", no_argument, NULL, 'v'},
+	{NULL, 0, NULL, 0}
+};
+
 
 int main(int argc, char **argv){
 	
 	CPOR_challenge *challenge = NULL;
 	CPOR_proof *proof = NULL;
 	int i = -1;
+	int opt = -1;
 #ifdef USE_S3
 	char tagfilepath[MAXPATHLEN];
 	char tfilepath[MAXPATHLEN];
 #endif	
+#ifdef DEBUG_MODE
+	struct timeval tv1, tv2;
+	double values[26];
 	
-	if(!argv[1]) return -1;
-	
-	//printf("Blocksize: %d bytes. Sector size: %d bytes. Num sectors per block: %d\n", CPOR_BLOCK_SIZE, CPOR_SECTOR_SIZE, CPOR_NUM_SECTORS);
-
-	if(!cpor_create_new_keys()) printf("Couldn't create keys\n");
-
-	fprintf(stdout, "Tagging %s...", argv[1]); fflush(stdout);
-	if(!cpor_tag_file(argv[1], strlen(argv[1]), NULL, 0, NULL, 0)) printf("No tag\n");
-	else printf("Done\n");
-	
-#ifdef USE_S3
-	fprintf(stdout, "\tWriting file %s to S3...", argv[1]); fflush(stdout);
-	if(!cpor_s3_put_file(argv[1], strlen(argv[1]))) printf("Couldn't write %s to S3.\n", argv[1]);
-	else printf("Done.\n");
-	
-	memset(tagfilepath, 0, MAXPATHLEN);
-	snprintf(tagfilepath, MAXPATHLEN, "%s.tag", argv[1]);
-	fprintf(stdout, "\tWriting tag file %s to S3...", tagfilepath); fflush(stdout);
-	if(!cpor_s3_put_file(tagfilepath, strlen(tagfilepath))) printf("Couldn't write %s to S3.\n", argv[1]);
-	else printf("Done.\n");
-	
-	memset(tfilepath, 0, MAXPATHLEN);
-	snprintf(tfilepath, MAXPATHLEN, "%s.t", argv[1]);
-	fprintf(stdout, "\tWriting t file %s to S3...", tfilepath); fflush(stdout);
-	if(!cpor_s3_put_file(tfilepath, strlen(tfilepath))) printf("Couldn't write %s to S3.\n", argv[1]);
-	else printf("Done.\n");			
-#endif	
-
-	fprintf(stdout, "Challenging file %s...\n", argv[1]); fflush(stdout);				
-
-#ifdef USE_S3
-	printf("\tGetting tag file...");fflush(stdout);
-	fflush(stdout);
-	if(!cpor_s3_get_file(tagfilepath, strlen(tagfilepath))) printf("Cloudn't get tag file.\n");
-	else printf("Done.\n");
-	
-	printf("\tGetting t file...");fflush(stdout);
-	fflush(stdout);
-	if(!cpor_s3_get_file(tfilepath, strlen(tfilepath))) printf("Cloudn't get t file.\n");
-	else printf("Done.\n");
+	memset(values, 0, sizeof(double) * 26);
 #endif
-
-	fprintf(stdout, "\tCreating challenge for %s...", argv[1]); fflush(stdout);
-	challenge = cpor_challenge_file(argv[1], strlen(argv[1]), NULL, 0);
-	if(!challenge) printf("No challenge\n");
-	else printf("Done.\n");
-
-	fprintf(stdout, "\tComputing proof...");fflush(stdout);
-#ifdef USE_S3
-	proof = cpor_s3_prove_file(argv[1], strlen(argv[1]), NULL, 0, challenge);
-#else	
-	proof = cpor_prove_file(argv[1], strlen(argv[1]), NULL, 0, challenge);
-#endif
-	if(!proof) printf("No proof\n");
-	else printf("Done.\n");
-
-	printf("\tVerifying proof..."); fflush(stdout);		
-	if((i = cpor_verify_file(argv[1], strlen(argv[1]), NULL, 0, challenge, proof)) == 1) printf("Verified\n");
-	else if(i == 0) printf("Cheating!\n");
-	else printf("Error\n");
 	
-	if(challenge) destroy_cpor_challenge(challenge);
-	if(proof) destroy_cpor_proof(proof);
+	if(argc < 2) return -1;
 	
+	/* Set default parameters */
+	params.lambda = 80;						/* The security parameter lambda */
+
+	params.prf_key_size = 20;				/* Size (in bytes) of an HMAC-SHA1 */
+	params.enc_key_size = 32;				/* Size (in bytes) of the user's AES encryption key */
+	params.mac_key_size = 20;				/* Size (in bytes) of the user's MAC key */
+
+	params.block_size = 4096;				/* Message block size in bytes */				
+	params.num_threads = 4;
+	params.num_challenge = params.lambda;	/* From the paper, a "conservative choice" for l is lamda, the number of bits to represent our group, Zp */
+
+	params.filename = NULL;
+	params.filename_len = 0;
+
+	params.op = CPOR_OP_NOOP;
+
+	
+
+
+	while((opt = getopt_long(argc, argv, "b:e:h:l:m:p:kt:v:y:", longopts, NULL)) != -1){
+		switch(opt){
+			case 'b':
+				params.block_size = atoi(optarg);
+				break;
+			case 'e':
+				params.enc_key_size = (unsigned int)atoi(optarg);
+				if(params.enc_key_size != 16 && params.enc_key_size != 24 && params.enc_key_size != 32){
+					fprintf(stderr, "Invalid encryption key size.  Must be 16, 24 or 32 bytes.\n");
+					return -1;
+				}
+				break;
+			case 'h':
+				params.num_threads = atoi(optarg);
+				break;
+			case 'k':
+				params.op = CPOR_OP_KEYGEN;
+				break;
+			case 'l':
+				params.num_challenge = atoi(optarg);
+				break;
+			case 'm':
+				params.mac_key_size = atoi(optarg);
+				break;
+			case 'p':
+				params.prf_key_size = atoi(optarg);
+				break;
+			case 't':
+				if(strlen(optarg) >= MAXPATHLEN){
+					fprintf(stderr, "ERROR: File name is too long.\n");
+					break;
+				}
+				params.filename = optarg;
+				params.filename_len = strlen(optarg);
+				params.op = CPOR_OP_TAG;
+
+				break;
+
+			case 'v':
+				if(strlen(optarg) >= MAXPATHLEN){
+					fprintf(stderr, "ERROR: File name is too long.\n");
+					break;
+				}
+				params.filename = optarg;
+				params.filename_len = strlen(optarg);
+				params.op = CPOR_OP_VERIFY;
+
+				break;
+			case 'y':
+				params.lambda = atoi(optarg);
+				break;				
+			default:
+				break;
+		}
+	}
+
+	/* The message sector size 1 byte smaller than the size of Zp so that it 
+	 * is guaranteed to be an element of the group Zp */
+	params.sector_size = ((params.Zp_bits/8) - 1);
+	/* Number of sectors per block */
+	params.num_sectors = ( (params.block_size/params.sector_size) + ((params.block_size % params.sector_size) ? 1 : 0) );
+	/* The size (in bits) of the prime that creates the field Z_p */
+	params.Zp_bits = params.lambda;
+
+
+
+	switch(params.op){
+		case CPOR_OP_KEYGEN:
+		#ifdef DEBUG_MODE
+			fprintf(stdout, "Using the following settings:\n");
+			fprintf(stdout, "\tLambda: %u\n", params.lambda);
+			fprintf(stdout, "\tPRF Key Size: %u bytes\n", params.prf_key_size);
+			fprintf(stdout, "\tENC Key Size: %u bytes\n", params.enc_key_size);
+			fprintf(stdout, "\tMAC Key Size: %u bytes\n", params.mac_key_size);
+		#endif
+			fprintf(stdout, "Generating keys...");
+			if(!cpor_create_new_keys()) printf("Couldn't create keys\n");
+			else printf("Done\n");
+			break;
+		
+		case CPOR_OP_TAG:
+		#ifdef DEBUG_MODE
+			fprintf(stdout, "Using the following settings:\n");
+			fprintf(stdout, "\tBlock Size: %u bytes\n", params.block_size);
+			fprintf(stdout, "\tNumber of Threads: %u \n", params.num_threads);
+		#endif			
+			fprintf(stdout, "Tagging %s...", params.filename); fflush(stdout);
+		#ifdef DEBUG_MODE
+			gettimeofday(&tv1, NULL);
+		#endif
+			if(!cpor_tag_file(params.filename, params.filename_len, NULL, 0, NULL, 0)) printf("No tag\n");
+			else printf("Done\n");
+		#ifdef DEBUG_MODE
+			gettimeofday(&tv2, NULL);
+			printf("%lf\n", (double)( (double)(double)(((double)tv2.tv_sec) + (double)((double)tv2.tv_usec/1000000)) - (double)((double)((double)tv1.tv_sec) + (double)((double)tv1.tv_usec/1000000)) ) );
+		#endif
+
+		#ifdef USE_S3
+			fprintf(stdout, "\tWriting file %s to S3...", params.filename); fflush(stdout);
+			if(!cpor_s3_put_file(params.filename, params.filename_len) printf("Couldn't write %s to S3.\n", params.filename);
+			else printf("Done.\n");
+
+			memset(tagfilepath, 0, MAXPATHLEN);
+			snprintf(tagfilepath, MAXPATHLEN, "%s.tag", params.filename);
+			fprintf(stdout, "\tWriting tag file %s to S3...", tagfilepath); fflush(stdout);
+			if(!cpor_s3_put_file(tagfilepath, strlen(tagfilepath))) printf("Couldn't write %s.tag to S3.\n", params.filename);
+			else printf("Done.\n");
+
+			memset(tfilepath, 0, MAXPATHLEN);
+			snprintf(tfilepath, MAXPATHLEN, "%s.t", params.filename);
+			fprintf(stdout, "\tWriting t file %s to S3...", tfilepath); fflush(stdout);
+			if(!cpor_s3_put_file(tfilepath, strlen(tfilepath))) printf("Couldn't write %s.t to S3.\n", params.filename);
+			else printf("Done.\n");			
+		#endif
+			break;
+			
+			
+		case CPOR_OP_VERIFY:
+		#ifdef DEBUG_MODE
+			fprintf(stdout, "Using the following settings:\n");
+			fprintf(stdout, "\tBlock Size: %u bytes\n", params.block_size);
+			fprintf(stdout, "\tNumber of Threads: %u \n", params.num_threads);
+			fprintf(stdout, "\tNumber of Challenge blocks: %u \n", params.num_challenge);
+		#endif		
+			fprintf(stdout, "Challenging file %s...\n", params.filename); fflush(stdout);				
+
+		#ifdef USE_S3
+			printf("\tGetting tag file...");fflush(stdout);
+			fflush(stdout);
+			memset(tagfilepath, 0, MAXPATHLEN);
+			snprintf(tagfilepath, MAXPATHLEN, "%s.tag", params.filename);
+			fprintf(stdout, "\tWriting tag file %s to S3...", tagfilepath); fflush(stdout);
+			if(!cpor_s3_get_file(tagfilepath, strlen(tagfilepath))) printf("Cloudn't get tag file.\n");
+			else printf("Done.\n");
+
+			printf("\tGetting t file...");fflush(stdout);
+			fflush(stdout);
+			memset(tfilepath, 0, MAXPATHLEN);
+			snprintf(tfilepath, MAXPATHLEN, "%s.t", params.filename);
+			if(!cpor_s3_get_file(tfilepath, strlen(tfilepath))) printf("Cloudn't get t file.\n");
+			else printf("Done.\n");
+		#endif
+
+			fprintf(stdout, "\tCreating challenge for %s...", params.filename); fflush(stdout);
+			challenge = cpor_challenge_file(params.filename, params.filename_len, NULL, 0);
+			if(!challenge) printf("No challenge\n");
+			else printf("Done.\n");
+
+			fprintf(stdout, "\tComputing proof...");fflush(stdout);
+		#ifdef USE_S3
+			proof = cpor_s3_prove_file(params.filename, params.filename_len, NULL, 0, challenge);
+		#else	
+			proof = cpor_prove_file(params.filename, params.filename_len, NULL, 0, challenge);
+		#endif
+			if(!proof) printf("No proof\n");
+			else printf("Done.\n");
+
+			printf("\tVerifying proof..."); fflush(stdout);		
+			if((i = cpor_verify_file(params.filename, params.filename_len, NULL, 0, challenge, proof)) == 1) printf("Verified\n");
+			else if(i == 0) printf("Cheating!\n");
+			else printf("Error\n");
+
+			if(challenge) destroy_cpor_challenge(challenge);
+			if(proof) destroy_cpor_proof(proof);		
+			break;
+
+		case CPOR_OP_NOOP:
+		default:
+			break;
+	}
+	
+	return 0;
+	
+}
+
+
+
+
+
+
+
+
+
 /*
 	unsigned char k_prf[CPOR_PRF_KEY_SIZE];
 	unsigned char block[CPOR_BLOCK_SIZE];
@@ -150,8 +318,3 @@ int main(int argc, char **argv){
 	destroy_cpor_challenge(challenge);
 	destroy_cpor_proof(proof);
 */
-	
-	
-	return 0;
-	
-}

@@ -35,10 +35,10 @@ CPOR_key *allocate_cpor_key(){
 	CPOR_key *key = NULL;
 
 	if( ((key = malloc(sizeof(CPOR_key))) == NULL)) goto cleanup;
-	if( ((key->k_enc = malloc(CPOR_ENC_KEY_SIZE)) == NULL)) goto cleanup;
-	key->k_enc_size = CPOR_ENC_KEY_SIZE;
-	if( ((key->k_mac = malloc(CPOR_MAC_KEY_SIZE)) == NULL)) goto cleanup;
-	key->k_mac_size = CPOR_MAC_KEY_SIZE;
+	if( ((key->k_enc = malloc(params.enc_key_size)) == NULL)) goto cleanup;
+	key->k_enc_size = params.enc_key_size;
+	if( ((key->k_mac = malloc(params.mac_key_size)) == NULL)) goto cleanup;
+	key->k_mac_size = params.mac_key_size;
 	key->global = NULL;
 	
 	return key;
@@ -52,9 +52,9 @@ cleanup:
 void destroy_cpor_key(CPOR_key *key){
 
 	if(!key) return;
-	if(key->k_enc) sfree(key->k_enc, CPOR_ENC_KEY_SIZE);
+	if(key->k_enc) sfree(key->k_enc, params.enc_key_size);
 	key->k_enc_size = 0;
-	if(key->k_mac) sfree(key->k_mac, CPOR_MAC_KEY_SIZE);
+	if(key->k_mac) sfree(key->k_mac, params.mac_key_size);
 	key->k_mac_size = 0;
 	if(key->global) destroy_cpor_global(key->global);
 	sfree(key, sizeof(CPOR_key));
@@ -79,9 +79,13 @@ CPOR_key *cpor_get_keys(){
 		goto cleanup;
 	}
 	
-	fread(key->k_enc, CPOR_ENC_KEY_SIZE, 1, keyfile);
+	fread(&key->k_enc_size, sizeof(size_t), 1, keyfile);
 	if(ferror(keyfile)) goto cleanup;
-	fread(key->k_mac, CPOR_MAC_KEY_SIZE, 1, keyfile);
+	fread(key->k_enc, key->k_enc_size, 1, keyfile);
+	if(ferror(keyfile)) goto cleanup;
+	fread(&key->k_mac_size, sizeof(size_t), 1, keyfile);
+	if(ferror(keyfile)) goto cleanup;
+	fread(key->k_mac, key->k_mac_size, 1, keyfile);
 	if(ferror(keyfile)) goto cleanup;
 
 	fread(&Zp_size, sizeof(size_t), 1, keyfile);
@@ -105,7 +109,8 @@ cleanup:
 }
 
 
-//TODO:  This is totally insecure -- take a look at the PDP key stuff.  Create and write keys.
+//TODO:  This is totally insecure -- keys are written unencrypted to the disk.  Take a look at the PDP key stuff.  
+/* Create and write keys.*/
 CPOR_key *cpor_create_new_keys(){
 
 	CPOR_key *key = NULL;
@@ -114,12 +119,12 @@ CPOR_key *cpor_create_new_keys(){
 	unsigned char *Zp = NULL;
 	
 	if( ((key = allocate_cpor_key()) == NULL)) goto cleanup;
-	if( ((key->global = cpor_create_global(CPOR_ZP_BITS)) == NULL)) goto cleanup;
+	if( ((key->global = cpor_create_global(params.Zp_bits)) == NULL)) goto cleanup;
 
-	if(!RAND_bytes(key->k_enc, CPOR_ENC_KEY_SIZE)) goto cleanup;
-	key->k_enc_size = CPOR_ENC_KEY_SIZE;	
-	if(!RAND_bytes(key->k_mac, CPOR_MAC_KEY_SIZE)) goto cleanup;
-	key->k_mac_size = CPOR_MAC_KEY_SIZE;
+	if(!RAND_bytes(key->k_enc, params.enc_key_size)) goto cleanup;
+	key->k_enc_size = params.enc_key_size;	
+	if(!RAND_bytes(key->k_mac, params.mac_key_size)) goto cleanup;
+	key->k_mac_size = params.mac_key_size;
 	
 	/* Check to see if the key file exists */
 	//TODO, fix this
@@ -136,10 +141,14 @@ CPOR_key *cpor_create_new_keys(){
 		fprintf(stderr, "ERROR: Was not able to create keyfile.\n");
 		goto cleanup;
 	}
-	
-	fwrite(key->k_enc, CPOR_ENC_KEY_SIZE, 1, keyfile);
+
+	fwrite(&key->k_enc_size, sizeof(size_t), 1, keyfile);
 	if(ferror(keyfile)) goto cleanup;
-	fwrite(key->k_mac, CPOR_MAC_KEY_SIZE, 1, keyfile);
+	fwrite(key->k_enc, key->k_enc_size, 1, keyfile);
+	if(ferror(keyfile)) goto cleanup;
+	fwrite(&key->k_mac_size, sizeof(size_t), 1, keyfile);
+	if(ferror(keyfile)) goto cleanup;
+	fwrite(key->k_mac, key->k_mac_size, 1, keyfile);
 	if(ferror(keyfile)) goto cleanup;
 	
 	Zp_size = BN_num_bytes(key->global->Zp);
@@ -148,7 +157,6 @@ CPOR_key *cpor_create_new_keys(){
 	memset(Zp, 0, Zp_size);
 	if(!BN_bn2bin(key->global->Zp, Zp)) goto cleanup;
 	fwrite(Zp, Zp_size, 1, keyfile);
-	
 	
 	if(keyfile) fclose(keyfile);
 	if(Zp) sfree(Zp, Zp_size);
